@@ -1062,7 +1062,7 @@ inline void mode0(unsigned long delayTime = 200) {
       case 13:
         veriGonder(veri("K"));
         Serial.println("Kırmızı");
-        bekle(3000);
+        bekle(30000);
         an = 14;
         break;
 
