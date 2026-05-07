@@ -18,6 +18,9 @@ int delayedTarget = -1;
 int isikBeklemeSuresi = 3000;
 bool doguHandled = false;
 int setIsikBeklemeSuresi = 5000;
+bool emergencyResumePending = false;
+int normalResumeAn = -1;
+int emergencyExitAn = -1;
 
 
 inline void veriGonder(uint16_t veri) {
@@ -73,6 +76,81 @@ inline uint16_t veri(const char* aranan) {
 }
 int basladi = 0;
 
+inline bool yesilAsamaMi(int durum) {
+  return (durum == 3 || durum == 7 || durum == 11 || durum == 15);
+}
+
+inline int yesildenSariya(int yesilAsama) {
+  switch (yesilAsama) {
+    case 3: return 4;
+    case 7: return 8;
+    case 11: return 12;
+    case 15: return 16;
+    default: return -1;
+  }
+}
+
+inline int yesildenSonrakiAkis(int yesilAsama) {
+  switch (yesilAsama) {
+    case 3: return 6;
+    case 7: return 10;
+    case 11: return 14;
+    case 15: return 2;
+    default: return -1;
+  }
+}
+
+inline int yesileGirisAsamasi(int yesilAsama) {
+  switch (yesilAsama) {
+    case 3: return 2;
+    case 7: return 6;
+    case 11: return 10;
+    case 15: return 14;
+    default: return -1;
+  }
+}
+
+inline int mesajaGoreAcilYesil(const String& mesaj) {
+  // Mesaj prefix -> fiziksel yonun yesil asamasi
+  if (mesaj.startsWith("G2-R1->")) return 3;  // Kuzey
+  if (mesaj.startsWith("G2-R2->")) return 7;  // Dogu
+  if (mesaj.startsWith("R1->")) return 11;    // Guney
+  if (mesaj.startsWith("R2->")) return 15;    // Bati
+  return -1;
+}
+
+inline void acilDurumUygula(int hedefYesilAn) {
+  if (hedefYesilAn < 0) return;
+
+  if (!emergencyResumePending) {
+    normalResumeAn = yesilAsamaMi(an) ? yesildenSonrakiAkis(an) : an;
+    emergencyResumePending = true;
+  }
+
+  emergencyExitAn = yesildenSonrakiAkis(hedefYesilAn);
+  isikBeklemeSuresi = setIsikBeklemeSuresi;
+
+  if (yesilAsamaMi(an)) {
+    targetAn = yesildenSariya(an);
+    delayedTarget = yesileGirisAsamasi(hedefYesilAn);
+    specialDelayActive = true;
+    specialDelayEnd = millis() + 2000;
+  } else {
+    targetAn = yesileGirisAsamasi(hedefYesilAn);
+    delayedTarget = -1;
+    specialDelayActive = false;
+  }
+}
+
+inline bool acilDurumMesajiIsle(const String& mesaj) {
+  int hedefYesil = mesajaGoreAcilYesil(mesaj);
+  if (hedefYesil < 0) return false;
+
+  Serial.println("ACIL DURUM ALGILANDI!");
+  acilDurumUygula(hedefYesil);
+  return true;
+}
+
 
 
 // Bekle fonksiyonun
@@ -86,6 +164,10 @@ void bekle(unsigned long sure) {
 
       if (c == '\n') {
         gelenveri.trim(); //
+        if (acilDurumMesajiIsle(gelenveri)) {
+          gelenveri = "";
+          continue;
+        }
         
         //İtfaiye opsiyonlar F3:E3:47:14
         if (gelenveri == "G2-R2->F3:E3:47:14") {
@@ -1100,6 +1182,14 @@ inline void mode0(unsigned long delayTime = 200) {
           an = targetAn;
           targetAn = -1;
           continue;   
+        }
+
+        if (emergencyResumePending && emergencyExitAn > 0 && an == emergencyExitAn) {
+          an = normalResumeAn;
+          emergencyResumePending = false;
+          normalResumeAn = -1;
+          emergencyExitAn = -1;
+          continue;
         }
 
   }
